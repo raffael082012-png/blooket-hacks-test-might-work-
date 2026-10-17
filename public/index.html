@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>raid</title>
+<style>
+  :root {
+    --bg: #05080a; --panel: #0c1210; --line: #1a2e24; --green: #39ff14;
+    --dim: #1f3d2a; --text: #c8f5c0; --muted: #5a7a62; --red: #ff2a55;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: Consolas, "Courier New", monospace;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; display: grid; place-items: center; padding: 20px;
+  }
+  body::before {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,255,70,.03) 2px, rgba(0,255,70,.03) 4px);
+  }
+  .card { position: relative; width: min(420px, 100%); background: var(--panel); border: 1px solid var(--line); padding: 18px; }
+  h1 { font-size: 13px; letter-spacing: .14em; color: var(--green); margin-bottom: 6px; }
+  .sub { font-size: 11px; color: var(--muted); margin-bottom: 14px; line-height: 1.4; }
+  label { display: block; font-size: 10px; color: var(--muted); margin-bottom: 4px; }
+  input {
+    width: 100%; background: #060a08; border: 1px solid var(--dim); color: var(--text);
+    padding: 9px 10px; font: inherit; font-size: 13px; margin-bottom: 10px; outline: none;
+  }
+  input:focus { border-color: var(--green); }
+  .row { display: flex; gap: 8px; }
+  .row > div { flex: 1; }
+  .row > div.small { flex: 0 0 100px; }
+  button {
+    width: 100%; background: #0a1a10; border: 1px solid var(--green); color: var(--green);
+    font: inherit; font-size: 12px; letter-spacing: .08em; text-transform: uppercase;
+    padding: 11px; cursor: pointer; margin-top: 4px;
+  }
+  button:hover { background: var(--green); color: #031006; }
+  button.stop { border-color: var(--red); color: var(--red); margin-top: 8px; }
+  button.stop:hover { background: var(--red); color: #1a0008; }
+  .log {
+    margin-top: 12px; border: 1px solid var(--line); background: #030605;
+    min-height: 120px; max-height: 220px; overflow: auto; padding: 10px;
+    font-size: 11px; color: var(--green); white-space: pre-wrap;
+  }
+  .bar { height: 4px; background: #0a140e; margin-top: 10px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; background: var(--green); transition: width .2s; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>// RAID</h1>
+    <p class="sub">pin → start. server tries fb.blooket.com join as NAME1..N. if blooket changed their API, logs will show the error.</p>
+    <label>pin</label>
+    <input id="pin" placeholder="123456" maxlength="12" autocomplete="off"/>
+    <div class="row">
+      <div>
+        <label>name</label>
+        <input id="name" value="HACKEDLOL"/>
+      </div>
+      <div class="small">
+        <label>count</label>
+        <input id="count" type="number" value="15" min="1" max="40"/>
+      </div>
+    </div>
+    <button type="button" id="go">start raid</button>
+    <button type="button" class="stop" id="stop">stop</button>
+    <div class="bar"><i id="prog"></i></div>
+    <div class="log" id="log">ready.
+</div>
+  </div>
+<script>
+const logEl = document.getElementById("log");
+const prog = document.getElementById("prog");
+let jobId = null, pollTimer = null;
+function log(m){ logEl.textContent += m + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+async function refresh(){
+  if(!jobId) return;
+  try{
+    const r = await fetch("/raid/" + jobId);
+    const j = await r.json();
+    if(!r.ok){ log("poll err"); return; }
+    prog.style.width = (j.count ? Math.round(j.done / j.count * 100) : 0) + "%";
+    if(j.log && j.log.length){ logEl.textContent = j.log.join("\n") + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+    if(j.status === "done" || j.status === "stopped"){
+      clearInterval(pollTimer); pollTimer = null;
+      log("— " + j.status + " — joined " + (j.joined||[]).length + " / fail " + (j.failed||[]).length);
+    }
+  }catch(e){ log("network " + e); }
+}
+document.getElementById("go").onclick = async function(){
+  const pin = document.getElementById("pin").value.trim();
+  const name = document.getElementById("name").value.trim() || "HACKEDLOL";
+  const count = parseInt(document.getElementById("count").value, 10) || 10;
+  if(!pin){ log("need pin"); return; }
+  log("starting…"); prog.style.width = "0%";
+  try{
+    const r = await fetch("/raid", { method:"POST", headers:{"content-type":"application/json"}, body: JSON.stringify({ pin, name, count }) });
+    const j = await r.json();
+    if(!r.ok){ log("err " + (j.error || r.status)); return; }
+    jobId = j.id; log("job " + jobId);
+    if(pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(refresh, 600); refresh();
+  }catch(e){ log("fail " + e); }
+};
+document.getElementById("stop").onclick = async function(){
+  if(!jobId) return;
+  try{ await fetch("/raid/" + jobId + "/stop", { method:"POST" }); log("stop requested"); }
+  catch(e){ log("stop err " + e); }
+};
+</script>
+</body>
+</html>
